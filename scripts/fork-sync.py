@@ -54,7 +54,9 @@ def run_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
 
 def harness_dirs(home: Path) -> list[tuple[str, Path]]:
     """Skill folders to link into: (label, path). Created only when the harness is present."""
-    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex")
+    # CODEX_HOME belongs to the real user; a --home sandbox must never write through it.
+    own_home = home == Path.home().resolve()
+    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex") if own_home else home / ".codex"
     table = [
         ("agents (shared: opencode, antigravity, codex)", home / ".agents" / "skills", True),
         ("codex", home / ".codex" / "skills", (home / ".codex").exists()),
