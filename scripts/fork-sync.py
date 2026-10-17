@@ -30,7 +30,7 @@ import urllib.request
 from pathlib import Path
 
 REPO_URL = os.environ.get("FORK_SYNC_REPO", "https://github.com/Hann9f/skills.git")
-TARBALL_URL = os.environ.get("FORK_SYNC_TARBALL", "https://github.com/Hann9f/skills/archive/refs/heads/main.tar.gz")
+TARBALL_URL = os.environ.get("FORK_SYNC_TARBALL", "https://github.com/Hann9f/skills/archive/{ref}.tar.gz")
 COMMIT_URL = "https://api.github.com/repos/Hann9f/skills/commits/main"
 STAMP = ".fork-sync-commit"
 FORK_SLUG = "Hann9f/skills"
@@ -89,12 +89,12 @@ def harness_dirs(home: Path) -> list[tuple[str, Path]]:
 
 
 def remote_commit() -> str | None:
-    """Short sha of the fork's main branch from the GitHub API, or None when it cannot be read."""
+    """Full sha of the fork's main branch from the GitHub API, or None when it cannot be read."""
     request = urllib.request.Request(COMMIT_URL, headers={"Accept": "application/vnd.github.sha",
                                                           "User-Agent": "fork-sync"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            return response.read().decode().strip()[:7] or None
+            return response.read().decode().strip() or None
     except OSError:
         return None
 
@@ -128,8 +128,8 @@ def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
         latest = remote_commit()
         if latest is None:
             log.append("WARN  cannot reach GitHub to compare the downloaded checkout")
-        elif have != latest:
-            log.append(f"DRIFT downloaded checkout is {have or 'unknown'}, fork main is {latest}; re-run to update")
+        elif not have or not latest.startswith(have):
+            log.append(f"DRIFT downloaded checkout is {have or 'unknown'}, fork main is {latest[:7]}; re-run to update")
         return have
     if (dest / ".git").exists():
         log.append(f"WARN  {dest} is a git checkout but git is not on PATH; install git or move it aside")
@@ -142,9 +142,11 @@ def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
             log.append(f"OK    cloned {REPO_URL}")
             return run_git(dest, "rev-parse", "--short", "HEAD").stdout.strip()
         log.append(f"WARN  git clone failed ({result.stderr.strip()}); using tarball")
+    latest = remote_commit()  # download by sha so the content always matches the stamp
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp, "main.tar.gz")
-        with urllib.request.urlopen(TARBALL_URL, timeout=60) as response, open(archive, "wb") as handle:
+        with urllib.request.urlopen(TARBALL_URL.format(ref=latest or "refs/heads/main"), timeout=60) as response, \
+                open(archive, "wb") as handle:
             shutil.copyfileobj(response, handle)
         with tarfile.open(archive) as bundle:
             try:
@@ -154,14 +156,13 @@ def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
         roots = [p for p in Path(tmp).iterdir() if p.is_dir()]
         if not roots:
             raise SystemExit("fork-sync: tarball held no directory")
-        latest = remote_commit()
         if latest:
-            (roots[0] / STAMP).write_text(latest, encoding="utf-8")
+            (roots[0] / STAMP).write_text(latest[:7], encoding="utf-8")
         if dest.exists():
             shutil.rmtree(dest)  # a tarball checkout is a pure download; nothing local lives in it
         shutil.move(str(roots[0]), str(dest))
     log.append("OK    downloaded tarball (no git here, so re-run to update)")
-    return latest
+    return latest[:7] if latest else None
 
 
 def make_link(link: Path, target: Path) -> str:
