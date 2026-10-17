@@ -40,6 +40,14 @@ SKILLS = {
 }
 
 
+def exists(path: Path) -> bool:
+    """Path.exists that treats an unreadable path as absent, so one locked folder cannot stop the sync."""
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 def is_link(path: Path) -> bool:
     if path.is_symlink():
         return True
@@ -60,7 +68,7 @@ def harness_dirs(home: Path) -> list[tuple[str, Path]]:
     table = [
         ("agents (shared: opencode, antigravity, codex)", home / ".agents" / "skills", True),
         ("codex", home / ".codex" / "skills", (home / ".codex").exists()),
-        ("codex CODEX_HOME", codex_home / "skills", codex_home.exists() and codex_home != home / ".codex"),
+        ("codex CODEX_HOME", codex_home / "skills", exists(codex_home) and codex_home != home / ".codex"),
         ("codex-cliproxy", home / ".codex-cliproxy" / "skills", (home / ".codex-cliproxy").exists()),
         ("codex-cliproxy-filtered", home / ".codex-cliproxy-filtered" / "skills",
          (home / ".codex-cliproxy-filtered").exists()),
@@ -214,7 +222,10 @@ def main(argv: list[str] | None = None) -> int:
         log.append(f"WARN  {dest} lacks the fork's skills; nothing linked")
     for label, folder in harness_dirs(home) if have_skills else []:
         for name, rel in SKILLS.items():
-            log.append(link_skill(label, folder, name, dest / rel, backup, args.check))
+            try:
+                log.append(link_skill(label, folder, name, dest / rel, backup, args.check))
+            except OSError as error:
+                log.append(f"WARN  {label}: {name}: {error.strerror or error} ({error.filename})")
     log.append(update_lock(home, dest, commit, args.check))
     print(f"fork-sync: home={home} checkout={dest} commit={commit or 'n/a'}")
     print("\n".join(log))
