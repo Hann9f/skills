@@ -31,6 +31,8 @@ from pathlib import Path
 
 REPO_URL = os.environ.get("FORK_SYNC_REPO", "https://github.com/Hann9f/skills.git")
 TARBALL_URL = os.environ.get("FORK_SYNC_TARBALL", "https://github.com/Hann9f/skills/archive/refs/heads/main.tar.gz")
+COMMIT_URL = "https://api.github.com/repos/Hann9f/skills/commits/main"
+STAMP = ".fork-sync-commit"
 FORK_SLUG = "Hann9f/skills"
 BRANCH = "main"
 SKILLS = {
@@ -86,6 +88,17 @@ def harness_dirs(home: Path) -> list[tuple[str, Path]]:
     return out
 
 
+def remote_commit() -> str | None:
+    """Short sha of the fork's main branch from the GitHub API, or None when it cannot be read."""
+    request = urllib.request.Request(COMMIT_URL, headers={"Accept": "application/vnd.github.sha",
+                                                          "User-Agent": "fork-sync"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.read().decode().strip()[:7] or None
+    except OSError:
+        return None
+
+
 def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
     """Return the commit the checkout is at, or None when it came from a tarball."""
     have_git = shutil.which("git") is not None
@@ -107,7 +120,19 @@ def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
                 log.append("OK    fast-forwarded" if result.returncode == 0 else f"WARN  cannot fast-forward: {result.stderr.strip()}")
         return run_git(dest, "rev-parse", "--short", "HEAD").stdout.strip() or head
     if check:
-        log.append("DRIFT no checkout" if not (dest / "skills").exists() else "OK    tarball checkout present")
+        if not (dest / "skills").exists():
+            log.append("DRIFT no checkout")
+            return None
+        stamp = dest / STAMP
+        have = stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else None
+        latest = remote_commit()
+        if latest is None:
+            log.append("WARN  cannot reach GitHub to compare the downloaded checkout")
+        elif have != latest:
+            log.append(f"DRIFT downloaded checkout is {have or 'unknown'}, fork main is {latest}; re-run to update")
+        return have
+    if (dest / ".git").exists():
+        log.append(f"WARN  {dest} is a git checkout but git is not on PATH; install git or move it aside")
         return None
     dest.parent.mkdir(parents=True, exist_ok=True)
     if have_git and not dest.exists():
@@ -129,11 +154,14 @@ def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
         roots = [p for p in Path(tmp).iterdir() if p.is_dir()]
         if not roots:
             raise SystemExit("fork-sync: tarball held no directory")
+        latest = remote_commit()
+        if latest:
+            (roots[0] / STAMP).write_text(latest, encoding="utf-8")
         if dest.exists():
-            shutil.move(str(dest), str(dest) + ".old-" + time.strftime("%Y%m%dT%H%M%S"))
+            shutil.rmtree(dest)  # a tarball checkout is a pure download; nothing local lives in it
         shutil.move(str(roots[0]), str(dest))
     log.append("OK    downloaded tarball (no git here, so re-run to update)")
-    return None
+    return latest
 
 
 def make_link(link: Path, target: Path) -> str:
