@@ -828,23 +828,32 @@ def cmd_check(args) -> int:
     return 1 if bad else 0
 
 
-def process_in(pid: int, run: Path) -> bool:
-    """True when pid is alive and (where /proc exists) runs from inside this run directory.
+def process_cwd(pid: int) -> str | None:
+    """Working directory of a live process, or None when it cannot be read on this platform."""
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        pass
+    try:  # macOS and other systems without /proc
+        out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True,
+                             text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return next((line[1:] for line in out.splitlines() if line.startswith("n")), None)
 
-    On Windows os.kill would terminate the process, so the check is skipped there."""
+
+def process_in(pid: int, run: Path) -> bool:
+    """True when pid is alive and its working directory is inside this run.
+
+    Unknowable cases (Windows, no /proc and no lsof) return False: the seal's hash check still
+    catches any later change to the evidence. On Windows os.kill would terminate the process."""
     if os.name == "nt":
         return False
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OverflowError):
         return False
-    cwd = Path(f"/proc/{pid}/cwd")
-    if not Path("/proc").is_dir():
-        return True
-    try:
-        return inside(os.readlink(cwd), run)
-    except OSError:
-        return False
+    return inside(process_cwd(pid), run)
 
 
 def cmd_seal(args) -> int:
