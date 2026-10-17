@@ -134,6 +134,9 @@ def ensure_checkout(dest: Path, check: bool, log: list[str]) -> str | None:
     if (dest / ".git").exists():
         log.append(f"WARN  {dest} is a git checkout but git is not on PATH; install git or move it aside")
         return None
+    if dest in Path(__file__).resolve().parents:
+        log.append(f"WARN  run a copy of this script from outside {dest}; it replaces that folder")
+        return None
     dest.parent.mkdir(parents=True, exist_ok=True)
     if have_git and not dest.exists():
         result = subprocess.run(["git", "clone", "--quiet", "--branch", BRANCH, REPO_URL, str(dest)],
