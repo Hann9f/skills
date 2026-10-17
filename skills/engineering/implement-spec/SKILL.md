@@ -35,6 +35,11 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single **implementer subagent**.
 
-8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
+8. Call the Skill tool with `verify-spec` on the reviewed integration branch, as its coordinator. When it ends:
+   - `continue`: go to step 9.
+   - `fix`: have one **implementer subagent** fix only the reported defects. It builds each fix with `tdd`, writing the failing test from the defect's expected and observed behaviour, with its reproducer as a guide. Don't run `code-review` again, because the next verification run is the check. Then continue `verify-spec` with a fix run.
+   - `stop`, or verification could not complete: leave the draft PR unready and the tickets open, report why, and go to step 10.
 
-9. Clean up all **implementer subagent** worktrees.
+9. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
+
+10. Clean up all **implementer subagent** worktrees.

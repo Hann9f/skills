@@ -1,6 +1,6 @@
 ## What it does
 
-`implement-spec` takes a [spec](https://www.aihero.dev/ai-coding-dictionary/spec) and its [tickets](https://www.aihero.dev/ai-coding-dictionary/ticket) and lands the whole thing in one run. The orchestrating [agent](https://www.aihero.dev/ai-coding-dictionary/agent) hands each ticket to an implementer [subagent](https://www.aihero.dev/ai-coding-dictionary/subagent) working in its own git worktree, merges each finished branch into a single **integration branch**, runs [code-review](https://aihero.dev/skills-code-review) over the result, and resolves the tickets.
+`implement-spec` takes a [spec](https://www.aihero.dev/ai-coding-dictionary/spec) and its [tickets](https://www.aihero.dev/ai-coding-dictionary/ticket) and lands the whole thing in one run. The orchestrating [agent](https://www.aihero.dev/ai-coding-dictionary/agent) hands each ticket to an implementer [subagent](https://www.aihero.dev/ai-coding-dictionary/subagent) working in its own git worktree, merges each finished branch into a single **integration branch**, runs [code-review](https://aihero.dev/skills-code-review) over the result, proves it against the running product with [verify-spec](https://aihero.dev/skills-verify-spec), and resolves the tickets.
 
 It reads the tickets as a **task graph**, not a list. Blocking edges decide what can start, so at any moment there is a **frontier** of tickets whose blockers have all landed, and every ticket on the frontier runs at once. That is the difference from working the tickets one by one. The graph's shape sets the pace, not the tickets' order on the tracker.
 
@@ -67,6 +67,10 @@ No. People ask because the skills now reach into implementation: "is Sandcastle 
 
 A worktree holds only what git tracks. Tests that read gitignored fixtures, local databases, or credentials can silently skip there. For a ticket whose verification depends on untracked material, tell the orchestrator to run it in the main checkout instead.
 
+**What happens when `verify-spec` finds a failure?**
+
+The run does not finish. One fix subagent fixes only the reported defects, building each with `tdd`, and the next verification run is the check, so `code-review` does not run again on the fix. A round allows two fix runs. After that the draft PR stays unready, the tickets stay open, and the handoff is left for you.
+
 ## It's working if
 
 - Several implementers are running at once whenever the graph allows, not one after another.
@@ -74,6 +78,7 @@ A worktree holds only what git tracks. Tests that read gitignored fixtures, loca
 - Every ticket's trace shows `tdd` running, with a failing test before the code.
 - Merges into the integration branch are fast-forwards, not conflict resolutions.
 - The run ends on one branch with every ticket resolved, and a PR only if your tracker wanted one.
+- A failed verification leaves the draft PR unready and the tickets open, and the report names the defects instead of the run quietly finishing.
 
 ## Where it fits
 
@@ -83,4 +88,4 @@ A worktree holds only what git tracks. Tests that read gitignored fixtures, loca
 grill-with-docs → to-spec → to-tickets → implement-spec → retro
 ```
 
-Its neighbours are [to-tickets](https://aihero.dev/skills-to-tickets), which declares the blocking edges it reads as a task graph, and [code-review](https://aihero.dev/skills-code-review), which it runs over the integration branch before closing out. [ask-matt](https://aihero.dev/skills-ask-matt) is the router over the whole set when you are not sure which flow you are in.
+Its neighbours are [to-tickets](https://aihero.dev/skills-to-tickets), which declares the blocking edges it reads as a task graph, [code-review](https://aihero.dev/skills-code-review), which it runs over the integration branch, and [verify-spec](https://aihero.dev/skills-verify-spec), which proves the reviewed branch against the running product before the draft PR goes ready or any ticket closes. [ask-matt](https://aihero.dev/skills-ask-matt) is the router over the whole set when you are not sure which flow you are in.

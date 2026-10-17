@@ -1,0 +1,3 @@
+interface:
+  display_name: "Verify Spec"
+  short_description: "Prove a built branch meets its spec"
