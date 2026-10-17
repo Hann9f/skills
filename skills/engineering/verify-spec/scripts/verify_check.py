@@ -53,6 +53,16 @@ def now() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def read_text(path, errors: str = "strict") -> str:
+    """Text is UTF-8 on every platform (Windows defaults to a legacy code page)."""
+    return Path(path).read_text(encoding="utf-8", errors=errors)
+
+
+def write_text(path, text: str) -> None:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -74,7 +84,7 @@ def sha256_path(path: Path) -> str:
 
 def read_json(path: Path, problems: list[str] | None = None):
     try:
-        return json.loads(Path(path).read_text())
+        return json.loads(read_text(path))
     except FileNotFoundError:
         return None
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
@@ -85,7 +95,7 @@ def read_json(path: Path, problems: list[str] | None = None):
 
 
 def write_json(path: Path, data) -> None:
-    Path(path).write_text(json.dumps(data, indent=2) + "\n")
+    write_text(path, json.dumps(data, indent=2) + "\n")
 
 
 def norm(text: str) -> str:
@@ -109,7 +119,7 @@ def git(repo, *args, index=None, work_tree=None, check=True) -> subprocess.Compl
     if index:
         env["GIT_INDEX_FILE"] = str(index)
     command = ["git", "-C", str(repo)] + (["--work-tree", str(work_tree)] if work_tree else []) + list(args)
-    result = subprocess.run(command, env=env, capture_output=True, text=True)
+    result = subprocess.run(command, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and result.returncode:
         fail(f"git {' '.join(args)}: {result.stderr.strip()}")
     return result
@@ -312,8 +322,8 @@ def cmd_freeze(args) -> int:
     run = lineage_dir / run_id
     run.mkdir(parents=True)
     if args.kind == "initial":
-        (run / "spec.md").write_text("\n\n".join(
-            f"<!-- verify-spec source: {source} -->\n{source.read_text().rstrip()}" for source in sources) + "\n")
+        write_text(run / "spec.md", "\n\n".join(
+            f"<!-- verify-spec source: {source} -->\n{read_text(source).rstrip()}" for source in sources) + "\n")
     else:
         prior_manifest = read_json(lineage_dir / prior["run_id"] / "manifest.json")
         shutil.copy2(lineage_dir / prior["run_id"] / "spec.md", run / "spec.md")
@@ -513,7 +523,7 @@ def evaluate_results(run: Path) -> dict:
     spec_file = run / "spec.md"
     if not spec_file.is_file() or sha256_file(spec_file) != manifest["spec"]["sha256"]:
         problems.append("spec.md changed after freeze")
-    spec_lines = [norm(line) for line in spec_file.read_text().splitlines()] if spec_file.is_file() else []
+    spec_lines = [norm(line) for line in read_text(spec_file).splitlines()] if spec_file.is_file() else []
     spec_lines = [line for line in spec_lines if line]
     if results.get("run_id") != manifest["run_id"]:
         problems.append("results.run_id does not match the manifest")
@@ -600,7 +610,7 @@ def evaluate_results(run: Path) -> dict:
             rows[aid]["note"] = "static: inspection evidence"
     if not criteria:
         problems.append("no criteria recorded")
-    for line in obligation_lines(spec_file.read_text() if spec_file.is_file() else ""):
+    for line in obligation_lines(read_text(spec_file) if spec_file.is_file() else ""):
         if not any(q in line for q in quoted):
             problems.append(f"spec obligation has no criterion quoting it: {line[:80]!r}")
     referenced = {ref for c in criteria.values() for ref in as_list(c.get("checks"))}
@@ -662,7 +672,7 @@ def evaluate_audit(run: Path, state: dict) -> tuple[str, list[str]]:
 
 
 def file_has(path: Path, quote: str) -> bool:
-    return path.is_file() and norm(quote) in norm(path.read_text(errors="replace"))
+    return path.is_file() and norm(quote) in norm(read_text(path, "replace"))
 
 
 def audit_state(run: Path, state: dict) -> tuple[str, list[str]]:
@@ -819,7 +829,11 @@ def cmd_check(args) -> int:
 
 
 def process_in(pid: int, run: Path) -> bool:
-    """True when pid is alive and (where /proc exists) runs from inside this run directory."""
+    """True when pid is alive and (where /proc exists) runs from inside this run directory.
+
+    On Windows os.kill would terminate the process, so the check is skipped there."""
+    if os.name == "nt":
+        return False
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OverflowError):
@@ -928,7 +942,7 @@ def cmd_verdict(args) -> int:
         "computed_at": now(),
     }
     write_json(run / "verdict.json", verdict)
-    (run / "report.md").write_text(render_report(run, verdict, state))
+    write_text(run / "report.md", render_report(run, verdict, state))
     save_ledger(lineage_dir, ledger)
     print(json.dumps({"headline": headline, "next": next_action, "retry_allowed": retry_allowed,
                       "report": str(run / "report.md")}))

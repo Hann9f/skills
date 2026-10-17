@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -512,6 +513,7 @@ class VerdictTests(Harness):
         run_cli("verdict", run)
         self.assertEqual(json.loads((run / "verdict.json").read_text())["headline"], "PASS")
 
+    @unittest.skipIf(os.name == "nt", "needs /proc and POSIX signals")
     def test_seal_refuses_live_service_from_run(self):
         run = self.new_run()
         data = self.results(run)
